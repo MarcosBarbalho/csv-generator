@@ -1,0 +1,29 @@
+services:
+  app:
+    image: node:24-alpine
+    container_name: csv-generator
+    working_dir: /app
+
+    volumes:
+      - .:/app
+      - node-modules:/app/node_modules
+      - ./output:/app/output
+
+    command: >
+      sh -c "
+        npm install &&
+        tail -f /dev/null
+      "
+
+    environment:
+      NODE_ENV: development
+      CSV_OUTPUT_DIRECTORY: /app/output
+
+    stdin_open: true
+    tty: true
+
+    restart: unless-stopped
+
+volumes:
+  node-modules:
+    driver: local

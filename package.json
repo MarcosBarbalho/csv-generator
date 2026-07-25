@@ -1,0 +1,12 @@
+{
+    "name": "csv-generator",
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+        "generate": "node src/index.js"
+    },
+    "dependencies": {
+        "@faker-js/faker": "^10.0.0",
+        "cpf-cnpj-validator": "^1.0.3"
+    }
+}
