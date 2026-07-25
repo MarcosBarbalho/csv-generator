@@ -131,7 +131,7 @@ function validateOptions({ records, fields, delimiter, documentType }) {
 export function generateCsv({
     records = 100,
     output = "output/registrations.csv",
-    delimiter = ",",
+    delimiter = ";",
     includeHeader = true,
     formattedDocument = false,
     documentType = DOCUMENT_TYPES.RANDOM,
