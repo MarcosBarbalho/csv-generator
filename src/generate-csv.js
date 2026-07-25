@@ -1,12 +1,20 @@
 import { fakerPT_BR as faker } from "@faker-js/faker";
-import { cpf } from "cpf-cnpj-validator";
+import { cpf, cnpj } from "cpf-cnpj-validator";
 import fs from "node:fs";
+import path from "node:path";
 
-const DEFAULT_FIELDS = [
+export const DOCUMENT_TYPES = {
+    CPF: "cpf",
+    CNPJ: "cnpj",
+    RANDOM: "random",
+};
+
+export const DEFAULT_FIELDS = [
     "id",
     "name",
     "email",
-    "cpf",
+    "document",
+    "document_type",
     "phone",
     "birth_date",
     "gender",
@@ -36,29 +44,53 @@ function formatDate(date) {
     return date.toISOString().split("T")[0];
 }
 
-function createRegistration({ formattedCpf }) {
+function resolveDocumentType(documentType) {
+    if (documentType === DOCUMENT_TYPES.RANDOM) {
+        return faker.helpers.arrayElement([DOCUMENT_TYPES.CPF, DOCUMENT_TYPES.CNPJ]);
+    }
+
+    return documentType;
+}
+
+function generateDocument(documentType, formattedDocument) {
+    if (documentType === DOCUMENT_TYPES.CNPJ) {
+        return cnpj.generate(formattedDocument);
+    }
+
+    return cpf.generate(formattedDocument);
+}
+
+function createRegistration({ documentType, formattedDocument }) {
+    const resolvedDocumentType = resolveDocumentType(documentType);
+
     const firstName = faker.person.firstName();
     const lastName = faker.person.lastName();
+    const fullName = `${firstName} ${lastName}`;
+
+    const isCompany = resolvedDocumentType === DOCUMENT_TYPES.CNPJ;
 
     return {
         id: faker.string.uuid(),
-        name: `${firstName} ${lastName}`,
+        name: isCompany ? faker.company.name() : fullName,
         email: faker.internet
             .email({
-                firstName,
-                lastName,
+                firstName: isCompany ? faker.company.buzzNoun() : firstName,
+                lastName: isCompany ? faker.company.buzzVerb() : lastName,
             })
             .toLowerCase(),
-        cpf: cpf.generate(formattedCpf),
+        document: generateDocument(resolvedDocumentType, formattedDocument),
+        document_type: resolvedDocumentType,
         phone: faker.phone.number(),
-        birth_date: formatDate(
-            faker.date.birthdate({
-                min: 18,
-                max: 80,
-                mode: "age",
-            }),
-        ),
-        gender: faker.person.sex(),
+        birth_date: isCompany
+            ? ""
+            : formatDate(
+                  faker.date.birthdate({
+                      min: 18,
+                      max: 80,
+                      mode: "age",
+                  }),
+              ),
+        gender: isCompany ? "" : faker.person.sex(),
         street: faker.location.street(),
         number: faker.location.buildingNumber(),
         neighborhood: faker.location.secondaryAddress(),
@@ -66,24 +98,17 @@ function createRegistration({ formattedCpf }) {
         state: faker.location.state({ abbreviated: true }),
         zip_code: faker.location.zipCode(),
         country: "Brasil",
-        job_title: faker.person.jobTitle(),
-        company: faker.company.name(),
-        created_at: faker.date.recent({ days: 365 }).toISOString(),
+        job_title: isCompany ? "" : faker.person.jobTitle(),
+        company: isCompany ? faker.company.name() : faker.company.name(),
+        created_at: faker.date
+            .recent({
+                days: 365,
+            })
+            .toISOString(),
     };
 }
 
-export function generateCsv({
-    records = 100,
-    output = process.env.CSV_OUTPUT_DIRECTORY
-        ? `${process.env.CSV_OUTPUT_DIRECTORY}/registrations.csv`
-        : "output/registrations.csv",
-    delimiter = ",",
-    includeHeader = true,
-    formattedCpf = false,
-    fields = DEFAULT_FIELDS,
-    encoding = "utf8",
-    seed = null,
-} = {}) {
+function validateOptions({ records, fields, delimiter, documentType }) {
     if (!Number.isInteger(records) || records <= 0) {
         throw new TypeError("The records option must be a positive integer.");
     }
@@ -96,11 +121,41 @@ export function generateCsv({
         throw new TypeError("The delimiter option must contain one character.");
     }
 
+    const allowedDocumentTypes = Object.values(DOCUMENT_TYPES);
+
+    if (!allowedDocumentTypes.includes(documentType)) {
+        throw new TypeError(`The documentType option must be one of: ${allowedDocumentTypes.join(", ")}.`);
+    }
+}
+
+export function generateCsv({
+    records = 100,
+    output = "output/registrations.csv",
+    delimiter = ",",
+    includeHeader = true,
+    formattedDocument = false,
+    documentType = DOCUMENT_TYPES.RANDOM,
+    fields = DEFAULT_FIELDS,
+    encoding = "utf8",
+    seed = null,
+} = {}) {
+    validateOptions({
+        records,
+        fields,
+        delimiter,
+        documentType,
+    });
+
     if (seed !== null) {
         faker.seed(seed);
     }
 
-    const availableFields = Object.keys(createRegistration({ formattedCpf }));
+    const sampleRegistration = createRegistration({
+        documentType,
+        formattedDocument,
+    });
+
+    const availableFields = Object.keys(sampleRegistration);
 
     const invalidFields = fields.filter((field) => !availableFields.includes(field));
 
@@ -108,14 +163,23 @@ export function generateCsv({
         throw new Error(`Invalid CSV fields: ${invalidFields.join(", ")}`);
     }
 
+    const outputDirectory = path.dirname(output);
+
+    fs.mkdirSync(outputDirectory, {
+        recursive: true,
+    });
+
     const rows = [];
 
     if (includeHeader) {
-        rows.push(fields.join(delimiter));
+        rows.push(fields.map((field) => escapeCsvValue(field, delimiter)).join(delimiter));
     }
 
     for (let index = 0; index < records; index++) {
-        const registration = createRegistration({ formattedCpf });
+        const registration = createRegistration({
+            documentType,
+            formattedDocument,
+        });
 
         const row = fields.map((field) => escapeCsvValue(registration[field], delimiter));
 
@@ -128,5 +192,6 @@ export function generateCsv({
         records,
         output,
         fields,
+        documentType,
     };
 }
